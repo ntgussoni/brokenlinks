@@ -1,0 +1,3 @@
+rake build
+gem install pkg/broken_links-0.1.0.gem
+check-links find -u http://ingenious.agency

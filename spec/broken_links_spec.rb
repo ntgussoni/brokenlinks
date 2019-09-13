@@ -1,7 +1,8 @@
+# frozen_string_literal: true
 
 require 'broken_links'
 describe BrokenLinks::Crawler do
-  it "find is gross" do
-    expect(BrokenLinks::Crawler.find).to eql("sabelo")
+  it 'find is gross' do
+    expect(BrokenLinks::Crawler.find).to eql('sabelo')
   end
 end
