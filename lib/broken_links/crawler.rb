@@ -25,7 +25,6 @@ module BrokenLinks
     def initialize(params)
       @print_json = params[:json]
       @print = params[:print]
-      @depth = params[:depth] || 10
       @queue = [] # Array of URIs
       @visited = [] # Array of URLs
       @pages = [] # Array of BrokenLinks::Page
