@@ -12,7 +12,7 @@ This gem provides a command-line tool to crawl a site and search for broken link
 Since this gem is not published you have to clone and build it first
 
     git clone https://github.com/ntgussoni/brokenlinks.git
-    cd /brokenlinks
+    cd brokenlinks/
 
 There's a ./build file provided
 
