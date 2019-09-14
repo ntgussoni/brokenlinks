@@ -1,3 +1,2 @@
 rake build
 gem install pkg/broken_links-0.2.0.gem
-check-links -u http://ingenious.agency --json --print
