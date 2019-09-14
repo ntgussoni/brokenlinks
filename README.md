@@ -11,23 +11,24 @@ This gem provides a command-line tool to crawl a site and search for broken link
 
 Since this gem is not published you have to clone and build it first
 
+    git clone https://github.com/ntgussoni/brokenlinks.git
+    cd /brokenlinks
+
 There's a ./build file provided
 
-    $ chmod +x ./build
-    $ ./build
+    chmod +x ./build
+    ./build
 
 or
 
-    $ git clone https://github.com/ntgussoni/brokenlinks.git
-    $ cd /brokenlinks
-    $ rake build
-    $ gem install pkg/broken_links-0.2.0.gem
+    rake build
+    gem install pkg/broken_links-0.2.0.gem
 
 After installing there will be a check-links command available
 
 ## Usage
 
-    $ check-links -u URL [--print] [--json] [--help]
+    check-links -u URL [--print] [--json] [--help]
 
 #### URL
 
