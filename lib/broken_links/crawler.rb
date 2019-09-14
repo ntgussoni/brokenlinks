@@ -1,158 +1,189 @@
 # frozen_string_literal: true
 
 require 'broken_links'
+require 'broken_links/status'
+require 'broken_links/page'
 
 require 'nokogiri'
 require 'open-uri'
 require 'net/http'
 require 'uri'
+require 'colorize'
+require 'whirly'
+require 'json'
 
 module BrokenLinks
-  class Page
-    attr_reader :visited, :status, :links, :uri, :url
-    attr_writer :visited, :status, :links
-
-    def initialize(params)
-      @url = params[:url]
-      @uri = URI(@url)
-      @visited = false
-      @status = { alive: false }
-      @links = []
-    end
-  end
   class Crawler
-    FAKE_USER_AGENT = "Mozilla/5.0 (Linux; Android 8.0.0;) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.73 Mobile Safari/537.36"
+    FAKE_USER_AGENT =
+      'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.84 Safari/537.36'
 
+    #
+    # Initializes the Crawler object
+    #
+    # @param [params] params hash containing the params
+    #
     def initialize(params)
-      @start_resource = BrokenLinks::Page.new(url: params[:url])
+      @print_json = params[:json]
+      @print = params[:print]
       @depth = params[:depth] || 10
+      @queue = [] # Array of URIs
+      @visited = [] # Array of URLs
+      @pages = [] # Array of BrokenLinks::Page
 
-      @queue = [@start_resource.uri]
-      @visited = []
-      @pages = []
-
-      crawl_url
-      print_results
-    end
-
-
-    # BFS
-    def crawl_url
-      while @queue.any?
-        url = @queue.shift
-        new_page = BrokenLinks::Page.new(url: url)
-
-        response = get_response(new_page.uri)
-        puts response
-        if response
-          status = validate_uri(new_page.uri, response)
-        else
-          status = false
-        end
-
-        new_page.status[:alive] = status
-
-        @pages << new_page
-        @visited << url
-
-        next if new_page.uri.host != @start_resource.uri.host || !status
-
-        get_links(new_page.uri, response.body).each do |new_uri|
-          uri_s = new_uri.to_s
-
-          # @visited.each do |v|
-          #   puts "-------"
-          #   puts v
-          #   puts uri_s
-          #   puts "IGUALES" if v == uri_s
-          #   puts "DISTINTOS" if v != uri_s
-
-          #   puts "-------"
-
-          # end
-
-          unless new_page.links.include? uri_s
-            new_page.links << uri_s
-          end
-
-          # puts @visited.include?(uri_s)
-          # puts "-INCLUDE #{uri_s}-"
-
-          if !@visited.include?(uri_s) && !@queue.include?(uri_s)
-            @queue << uri_s
-          end
-        end
-    end
-
+      # Enqueue base url
+      @start_resource = BrokenLinks::Page.new(url: params[:url])
+      @queue << @start_resource.url
     rescue StandardError => e
-      puts e
+      puts e.message + e.backtrace
     end
 
+    def start
+      crawl_url
+      print_results if @print
+      print_json if @print_json
+    end
+
+    #
+    # Handles the queue, picks the next URI, checks the validity
+    # and crawls for the links IF it's within the same host
+    #
+    def crawl_url
+      Whirly.start spinner: 'dots' do
+        while @queue.any?
+          url = @queue.shift
+          # Whirly.status = "Visiting #{url}".blue
+
+          new_page = BrokenLinks::Page.new(url: url)
+          response = get_response(new_page.uri)
+
+          new_page.status = response ? validate_uri(new_page.url, response) : BrokenLinks::Status::Error.new(error: 'Unknown Response')
+
+          @pages << new_page
+          @visited << url
+
+          is_different_host = new_page.uri.host != @start_resource.uri.host
+          is_dead = new_page.status.is_a? BrokenLinks::Status::Error
+
+          next if is_different_host || is_dead
+
+          Whirly.status = "Getting links from  #{url}".blue
+          uris = get_uris(new_page, response.body)
+          enqueue(new_page, uris)
+        end
+      end
+    end
+
+    #
+    # Handles new found URIs, enqueues each new one
+    #
+    # @param [Page] current_page Page we are currently crawling
+    # @param [URI] uris  array of uris
+    #
+    def enqueue(page, uris)
+      uris.each do |new_uri|
+        uri_s = new_uri.to_s
+        page.links << uri_s unless page.links.include? uri_s
+        @queue << uri_s if !@visited.include?(uri_s) && !@queue.include?(uri_s)
+      end
+    end
+
+    #
+    # Creates an HTTP GET request and returns the resource
+    #
+    # @param [URI] uri
+    #
+    # @return [Boolean / Request] Returns the resource or false if it fails
+    #
     def get_response(uri)
-      begin
-        http_options = {
-          use_ssl:      uri.scheme == "https",
-        }
-        request = Net::HTTP::Get.new(uri)
-        Net::HTTP.start(uri.host, uri.port, http_options) do |http|
-          request["User-Agent"] = FAKE_USER_AGENT
-          http.request(request)
-        end
-      rescue => exception
-        puts exception
-        false
+      http_options = { use_ssl: uri.scheme == 'https' }
+      request = Net::HTTP::Get.new(uri)
+      Net::HTTP.start(uri.host, uri.port, http_options) do |http|
+        # Act normal
+        # Pretend you are a person
+        request['User-Agent'] = FAKE_USER_AGENT
+        http.request(request)
       end
-
+    rescue StandardError
+      false
     end
 
-    def validate_uri(uri,response)
-      begin
-        if response.is_a? Net::HTTPSuccess then true
-        elsif response.is_a? Net::HTTPRedirection
-          redirect_uri = build_uri(uri, response['location'])
-          puts redirect_uri
-          return self.validate_uri(uri, get_response(redirect_uri))
-        else false
-        end
-      rescue  StandardError => e
-        puts e
-          false
-      end
-    end
-
-    def get_links(current_uri, response)
-
-      links = Nokogiri::HTML(response)
-              .css('a')
-              .reject { |link| link.attribute('href').nil? ||
-                link.attribute('href').value =~ /mailto\:/ ||
-                link.attribute('href').value == "#"  }
-              .map { |link| link.attribute('href').value.strip }
-              .uniq
-
-
-      links.map { |url| build_uri(current_uri, url) }
-    end
-
-    def build_uri(current_url, url)
-      if url =~ %r{^https?\://}
-        URI(url)
+    #
+    # Checks the response code to see if it's valid or not
+    # If it's a redirection, it builds up the redirect url and validates it
+    #
+    # @param [<URI>] uri URI related to the response
+    # @param [<Response>] response Response object from HTTP::Response
+    #
+    # @return [<Boolean>] Returns if the URL is alive or dead
+    #
+    def validate_uri(url, response, redirected = false)
+      if response.is_a? Net::HTTPSuccess
+        redirected ? BrokenLinks::Status::Redirected.new(redirected_to: url) : BrokenLinks::Status::OK.new
+      elsif response.is_a? Net::HTTPRedirection
+        redirect_uri = build_uri(url, response['location'])
+        validate_uri(redirect_uri, get_response(redirect_uri), true)
       else
-        URI.join(current_url, url)
+        BrokenLinks::Status::Error.new(error: 'Unknown Response')
       end
     end
 
+    #
+    # Parses the HTML and grabs hrefs from <a> that contains
+    # relative paths or full URLS but not mailto:
+    #
+    # @param [Page] current_page Page we are currently crawling
+    # @param [Response] response Response object from HTTP::Response
+    #
+    # @return [List of URIs] Array containing the URIs we crawled
+    #
+    def get_uris(current_page, response)
+      links =
+        Nokogiri.HTML(response).css('a').reject do |link|
+          link.attribute('href').nil? ||
+            link.attribute('href').value =~ /mailto\:/ ||
+            link.attribute('href').value == '#'
+        end.map { |link| link.attribute('href').value.strip }.uniq
+
+      links.map { |url| build_uri(current_page, url) }
+    end
+
+    #
+    # Builds a new URI wether it's absolute or relative
+    #
+    # @param [Page] current_page Page we are currently crawling
+    # @param [String] url The URL
+    #
+    # @return [<Type>] <description>
+    #
+    def build_uri(page, url)
+      url =~ %r{^https?\://} ? URI(url) : URI.join(page.url, url)
+    end
+
+    #
+    # Prints the results to the console
+    #
     def print_results
       @pages.each do |page|
-        puts "#{page.url} #{page.status[:alive] ? "[OK]" : "[DEAD]"}"
-        page.links.each do |link|
-          puts "--------#{link}"
-        end
+        puts '--------------'
+        puts page.url
+        puts page.status.print
+        puts '--- You can find the link in: ----'
+        @pages.each { |p| puts p.url if p.links.include? page.url }
       end
     end
 
-    def self.find(_url, _depth)
-      'pass!'
+    #
+    # Prints the results in json format
+    #
+    def print_json
+      result = []
+      @pages.each do |page|
+        status = page.status.to_hash
+        obj = { url: page.url, status: status[:status] }
+        obj[:found_in] = @pages.map { |p| p.url if p.links.include?(page.url) }.compact
+        result << obj
+      end
+      result.to_json
     end
   end
 end
