@@ -37,6 +37,28 @@ describe BrokenLinks::Crawler do
     end
   end
 
+  context 'when an external site is found' do
+    before do
+      stub_request(:get, 'http://www.example.com')
+        .to_return(status: 200, body: '
+        <a href="http://www.some-external-site.com/" />
+        ')
+
+      stub_request(:get, 'http://www.some-external-site.com')
+        .to_return(status: 200, body: '
+          <a href="/external-link" />
+          ')
+    end
+
+    it 'returns 2 links' do
+      expect(res.count).to be(2)
+    end
+
+    it 'no external link are crawled' do
+      expect(find('external-link')).to be_nil
+    end
+  end
+
   context 'When checking a site with nonrepeated links' do
     before do
       stub_request(:get, 'http://www.example.com')
