@@ -7,14 +7,11 @@ require 'colorize'
 #
 module BrokenLinks
   class Status
-    #
-    # <Description>
-    #
     class Base
     end
 
     #
-    # <Description>
+    # OK Class to handle the Success status
     #
     class OK < Base
       def print
@@ -27,7 +24,7 @@ module BrokenLinks
     end
 
     #
-    # <Description>
+    # Redirected Class to handle the redirection status
     #
     class Redirected < OK
       def initialize(params)
@@ -40,7 +37,7 @@ module BrokenLinks
     end
 
     #
-    # <Description>
+    # Error Class to handle the 404 or any other error status
     #
     class Error < Base
       def initialize(params)

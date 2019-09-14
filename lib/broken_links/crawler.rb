@@ -47,16 +47,17 @@ module BrokenLinks
     # Handles the queue, picks the next URI, checks the validity
     # and crawls for the links IF it's within the same host
     #
+
     def crawl_url
       Whirly.start spinner: 'dots' do
         while @queue.any?
           url = @queue.shift
-          # Whirly.status = "Visiting #{url}".blue
+          Whirly.status = "Visiting #{url}".blue
 
           new_page = BrokenLinks::Page.new(url: url)
           response = get_response(new_page.uri)
 
-          new_page.status = response ? validate_uri(new_page.url, response) : BrokenLinks::Status::Error.new(error: 'Unknown Response')
+          new_page.status = response ? validate_uri(new_page.uri, response) : BrokenLinks::Status::Error.new(error: 'Unknown Response')
 
           @pages << new_page
           @visited << url
@@ -77,7 +78,7 @@ module BrokenLinks
     # Handles new found URIs, enqueues each new one
     #
     # @param [Page] current_page Page we are currently crawling
-    # @param [URI] uris  array of uris
+    # @param [URI] uris  Array of uris to enqueue
     #
     def enqueue(page, uris)
       uris.each do |new_uri|
@@ -90,9 +91,9 @@ module BrokenLinks
     #
     # Creates an HTTP GET request and returns the resource
     #
-    # @param [URI] uri
+    # @param URI uri
     #
-    # @return [Boolean / Request] Returns the resource or false if it fails
+    # @return Boolean / Request Returns the resource or false if it fails
     #
     def get_response(uri)
       http_options = { use_ssl: uri.scheme == 'https' }
@@ -111,16 +112,17 @@ module BrokenLinks
     # Checks the response code to see if it's valid or not
     # If it's a redirection, it builds up the redirect url and validates it
     #
-    # @param [<URI>] uri URI related to the response
-    # @param [<Response>] response Response object from HTTP::Response
+    # @param <URI> uri URI related to the response
+    # @param <Response> response Response object from HTTP::Response
+    # @param <Response> response Response object from HTTP::Response
     #
-    # @return [<Boolean>] Returns if the URL is alive or dead
+    # @return <Boolean> Returns if the URL is alive or dead
     #
-    def validate_uri(url, response, redirected = false)
+    def validate_uri(uri, response, redirected = false)
       if response.is_a? Net::HTTPSuccess
-        redirected ? BrokenLinks::Status::Redirected.new(redirected_to: url) : BrokenLinks::Status::OK.new
+        redirected ? BrokenLinks::Status::Redirected.new(redirected_to: uri.to_s) : BrokenLinks::Status::OK.new
       elsif response.is_a? Net::HTTPRedirection
-        redirect_uri = build_uri(url, response['location'])
+        redirect_uri = build_uri(uri, response['location'])
         validate_uri(redirect_uri, get_response(redirect_uri), true)
       else
         BrokenLinks::Status::Error.new(error: 'Unknown Response')
@@ -131,8 +133,8 @@ module BrokenLinks
     # Parses the HTML and grabs hrefs from <a> that contains
     # relative paths or full URLS but not mailto:
     #
-    # @param [Page] current_page Page we are currently crawling
-    # @param [Response] response Response object from HTTP::Response
+    # @param Page current_page Page we are currently crawling
+    # @param Response response Response object from HTTP::Response
     #
     # @return [List of URIs] Array containing the URIs we crawled
     #
@@ -144,19 +146,19 @@ module BrokenLinks
             link.attribute('href').value == '#'
         end.map { |link| link.attribute('href').value.strip }.uniq
 
-      links.map { |url| build_uri(current_page, url) }
+      links.map { |url| build_uri(current_page.uri, url) }
     end
 
     #
     # Builds a new URI wether it's absolute or relative
     #
-    # @param [Page] current_page Page we are currently crawling
-    # @param [String] url The URL
+    # @param <URI> base_uri URI we are currently crawling
+    # @param <String> url the URL to join
     #
-    # @return [<Type>] <description>
+    # @return <URI> Returns a fully build URI
     #
-    def build_uri(page, url)
-      url =~ %r{^https?\://} ? URI(url) : URI.join(page.url, url)
+    def build_uri(base_uri, url)
+      url =~ %r{^https?\://} ? URI(url) : URI.join(base_uri, url)
     end
 
     #
