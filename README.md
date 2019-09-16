@@ -28,7 +28,7 @@ After installing there will be a check-links command available
 
 ## Usage
 
-    check-links -u URL [--print] [--json] [--help]
+    check-links -u URL [--print] [--json] [--help] [--login-url] LOGIN_URL [--username] USERNAME [--password] PASWORD
 
 #### URL
 
@@ -41,6 +41,10 @@ Prints colorized output to screen _(Default: true)_
 #### --json
 
 Prints output in JSON format _(Default: false)_
+
+#### --help
+
+Prints CLI help
 
 ## Login
 
@@ -55,10 +59,6 @@ Login username _(Default: "")_
 #### --password
 
 Login password _(Default: "")_
-
-#### --help
-
-Prints CLI help
 
 ## Development
 
