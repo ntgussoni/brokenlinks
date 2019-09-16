@@ -10,6 +10,10 @@ module BrokenLinks
     method_option :json, default: false, type: :boolean
     method_option :print, aliases: '--p', default: true, type: :boolean
 
+    method_option :login_url, aliases: '--login-url', default: '', type: :string
+    method_option :username, aliases: '--username', default: '', type: :string
+    method_option :password, aliases: '--password', default: '', type: :string
+
     def find
       url = options[:url]
       o_print = options[:print]

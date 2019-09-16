@@ -5,6 +5,9 @@ require 'webmock/rspec'
 
 describe BrokenLinks::Crawler do
   before do
+    stub_request(:get, 'http://www.example.com/login')
+      .to_return(status: 200, headers: { 'Cookie' => 'somerandomcookie;' }, body: '')
+
     stub_request(:get, 'http://www.example.com/link-1')
       .to_return(status: 200, body: '')
     stub_request(:get, 'http://www.example.com/link-2')

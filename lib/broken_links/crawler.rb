@@ -3,6 +3,7 @@
 require 'broken_links'
 require 'broken_links/status'
 require 'broken_links/page'
+require 'broken_links/login'
 
 require 'nokogiri'
 require 'open-uri'
@@ -23,11 +24,19 @@ module BrokenLinks
     # @param [params] params hash containing the params
     #
     def initialize(params)
+      @login_url = params[:login_url]
+      @username = params[:username]
+      @password = params[:password]
+
       @print_json = params[:json]
       @print = params[:print]
       @queue = [] # Array of URIs
       @visited = [] # Array of URLs
       @pages = [] # Array of BrokenLinks::Page
+
+      @cookies = if @login_url && @username && @password
+                   BrokenLinks::Login.new(login_url: @login_url, username: @username, password: @password).do_login
+                 end
 
       # Enqueue base url
       @start_resource = BrokenLinks::Page.new(url: params[:url])
@@ -100,6 +109,8 @@ module BrokenLinks
       Net::HTTP.start(uri.host, uri.port, http_options) do |http|
         # Act normal
         # Pretend you are a person
+        # Send cookies if you have them
+        request['Cookie'] = @cookies unless @cookies.nil?
         request['User-Agent'] = FAKE_USER_AGENT
         http.request(request)
       end
