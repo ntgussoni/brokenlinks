@@ -24,13 +24,15 @@ module BrokenLinks
     # @param [params] params hash containing the params
     #
     def initialize(params)
+      @semaphore = Mutex.new
+      @max_threads = 4
+
       @login_url = params[:login_url]
       @username = params[:username]
       @password = params[:password]
 
       @print_json = params[:json]
       @print = params[:print]
-      @queue = [] # Array of URIs
       @visited = [] # Array of URLs
       @pages = [] # Array of BrokenLinks::Page
 
@@ -40,60 +42,55 @@ module BrokenLinks
 
       # Enqueue base url
       @start_resource = BrokenLinks::Page.new(url: params[:url])
-      @queue << @start_resource.url
     rescue StandardError => e
       puts e.message + e.backtrace
     end
 
     def start
-      crawl_url
+      Whirly.start spinner: 'dots'
+      threads = []
+      can_spawn_thread?
+      threads << visit(@start_resource.url)
+      threads.each(&:join)
+      Whirly.stop
+
       print_results if @print
       print_json if @print_json
     end
 
-    #
-    # Handles the queue, picks the next URI, checks the validity
-    # and crawls for the links IF it's within the same host
-    #
+    def visit(url)
+      Thread.new do
+        Whirly.status = "Visiting #{url}".blue
+        new_page = @semaphore.synchronize { BrokenLinks::Page.new(url: url) }
+        response = get_response(new_page.uri)
+        new_page.status = response ? validate_uri(new_page.uri, response) : BrokenLinks::Status::Error.new(error: 'Unknown Response')
 
-    def crawl_url
-      Whirly.start spinner: 'dots' do
-        while @queue.any?
-          url = @queue.shift
-          Whirly.status = "Visiting #{url}".blue
-
-          new_page = BrokenLinks::Page.new(url: url)
-          response = get_response(new_page.uri)
-
-          new_page.status = response ? validate_uri(new_page.uri, response) : BrokenLinks::Status::Error.new(error: 'Unknown Response')
-
+        @semaphore.synchronize do
           @pages << new_page
-          @visited << url
-
-          is_different_host = new_page.uri.host != @start_resource.uri.host
-          is_dead = new_page.status.is_a? BrokenLinks::Status::Error
-
-          next if is_different_host || is_dead
-
-          Whirly.status = "Getting links from  #{url}".blue
-          uris = get_uris(new_page, response.body)
-          enqueue(new_page, uris)
         end
+
+        is_different_host = new_page.uri.host != @start_resource.uri.host
+        is_dead = new_page.status.is_a? BrokenLinks::Status::Error
+
+        parse_links(new_page, response) unless is_different_host || is_dead
       end
     end
 
-    #
-    # Handles new found URIs, enqueues each new one
-    #
-    # @param [Page] current_page Page we are currently crawling
-    # @param [URI] uris  Array of uris to enqueue
-    #
-    def enqueue(page, uris)
-      uris.each do |new_uri|
+    def parse_links(new_page, response)
+      threads = []
+      Whirly.status = "Getting links from  #{new_page.url}".blue
+
+      get_uris(new_page, response.body).each do |new_uri|
         uri_s = new_uri.to_s
-        page.links << uri_s unless page.links.include? uri_s
-        @queue << uri_s if !@visited.include?(uri_s) && !@queue.include?(uri_s)
+
+        @semaphore.synchronize { new_page.links << uri_s unless new_page.links.include? uri_s }
+        next if @visited.include?(uri_s)
+
+        @semaphore.synchronize { @visited << uri_s }
+        can_spawn_thread?
+        threads << visit(uri_s)
       end
+      threads.each(&:join)
     end
 
     #
@@ -104,7 +101,7 @@ module BrokenLinks
     # @return Boolean / Request Returns the resource or false if it fails
     #
     def get_response(uri)
-      http_options = { use_ssl: uri.scheme == 'https' }
+      http_options = { use_ssl: uri.scheme == 'https', open_timeout: 10, read_timeout: 20 }
       request = Net::HTTP::Get.new(uri)
       Net::HTTP.start(uri.host, uri.port, http_options) do |http|
         # Act normal
@@ -149,14 +146,11 @@ module BrokenLinks
     # @return [List of URIs] Array containing the URIs we crawled
     #
     def get_uris(current_page, response)
-      links =
-        Nokogiri.HTML(response).css('a').reject do |link|
-          link.attribute('href').nil? ||
-            link.attribute('href').value =~ /mailto\:/ ||
-            link.attribute('href').value == '#'
-        end.map { |link| link.attribute('href').value.strip }.uniq
-
-      links.map { |url| build_uri(current_page.uri, url) }
+      Nokogiri.HTML(response).css('a').reject do |link|
+        link.attribute('href').nil? ||
+          link.attribute('href').value =~ /mailto\:/ ||
+          link.attribute('href').value == '#'
+      end.map { |link| build_uri(current_page.uri, link.attribute('href').value.strip) }.uniq
     end
 
     #
@@ -175,6 +169,8 @@ module BrokenLinks
     # Prints the results to the console
     #
     def print_results
+      puts '----------REPORT------------'.blue
+
       @pages.each do |page|
         puts '--------------'
         puts page.url
@@ -182,6 +178,14 @@ module BrokenLinks
         puts '--- You can find the link in: ----'
         @pages.each { |p| puts p.url if p.links.include? page.url }
       end
+
+      errored_count = @pages.filter { |x| x.status.is_a? BrokenLinks::Status::Error }.count
+      puts ''
+      puts '----------------------'.blue
+      puts "#{@pages.count} links found".yellow
+      puts "#{@pages.count - errored_count} good links".green
+      puts "#{errored_count} broken links".red
+      puts '----------------------'.blue
     end
 
     #
@@ -196,6 +200,13 @@ module BrokenLinks
         result << obj
       end
       result.to_json
+    end
+
+    def can_spawn_thread?
+      until Thread.list.select { |thread| thread.status == 'run' }.count <
+            (1 + @max_threads)
+        sleep 0.015
+      end
     end
   end
 end
