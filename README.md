@@ -42,6 +42,20 @@ Prints colorized output to screen _(Default: true)_
 
 Prints output in JSON format _(Default: false)_
 
+## Login
+
+#### --login-url
+
+Login URL _(Default: "")_
+
+#### --username
+
+Login username _(Default: "")_
+
+#### --password
+
+Login password _(Default: "")_
+
 #### --help
 
 Prints CLI help
