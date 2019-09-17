@@ -46,18 +46,26 @@ module BrokenLinks
       puts e.message + e.backtrace
     end
 
+    #
+    # Starts crawling
+    #
     def start
-      Whirly.start spinner: 'dots'
-      threads = []
-      can_spawn_thread?
-      threads << visit(@start_resource.url)
-      threads.each(&:join)
-      Whirly.stop
+      Whirly.start spinner: 'dots' do
+        threads = []
+        can_spawn_thread?
+        threads << visit(@start_resource.url)
+        threads.each(&:join)
+      end
 
       print_results if @print
       print_json if @print_json
     end
 
+    #
+    # Visits the URL, and creates the page
+    #
+    # @param String url the url to visit
+    #
     def visit(url)
       Thread.new do
         Whirly.status = "Visiting #{url}".blue
@@ -76,6 +84,13 @@ module BrokenLinks
       end
     end
 
+    #
+    # Parses the <a> links and spawns a thread to visit each one of them
+    #
+    # @param Page new_page <description>
+    # @param HTTP:Response response <description>
+    #
+    #
     def parse_links(new_page, response)
       threads = []
       Whirly.status = "Getting links from  #{new_page.url}".blue
